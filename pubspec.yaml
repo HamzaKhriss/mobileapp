@@ -1,0 +1,29 @@
+name: casa_wonders
+description: A Flutter travel app showcasing the wonders of Casablanca
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ^6.1.0
+  flutter_svg: ^2.0.7
+  flutter_riverpod: ^2.4.5
+  go_router: ^12.1.1
+  intl: ^0.18.1
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.1
+  flutter_lucide: ^1.6.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/

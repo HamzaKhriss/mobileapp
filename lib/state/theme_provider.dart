@@ -48,10 +48,8 @@ class AppThemes {
           unselectedItemColor: Colors.grey,
           type: BottomNavigationBarType.fixed,
         ),
-        cardTheme: const CardTheme(
-          color: AppColors.kCardDark,
-          elevation: 2,
-        ),
+        cardTheme:
+            const CardThemeData(color: AppColors.kCardDark, elevation: 2),
       );
 
   static ThemeData get lightTheme => ThemeData(
@@ -66,8 +64,9 @@ class AppThemes {
           onSurface: AppColors.kTextLight,
           background: AppColors.kBrandLight,
         ),
-        textTheme:
-            GoogleFonts.urbanistTextTheme(ThemeData.light().textTheme).copyWith(
+        textTheme: GoogleFonts.urbanistTextTheme(
+          ThemeData.light().textTheme,
+        ).copyWith(
           bodyLarge: GoogleFonts.urbanist(
             color: AppColors.kTextLight,
             fontWeight: FontWeight.w500,
@@ -111,16 +110,13 @@ class AppThemes {
           type: BottomNavigationBarType.fixed,
           elevation: 8,
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: AppColors.kCardLight,
           elevation: 2,
           shadowColor: Colors.black.withOpacity(0.1),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(
-              color: AppColors.kBorderLight,
-              width: 1,
-            ),
+            side: const BorderSide(color: AppColors.kBorderLight, width: 1),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+// import 'package:lucide_icons_flutter/lucide_icons.dart'; // Invalid import - removed
+import 'package:geolocator/geolocator.dart';
 import '../../theme/colors.dart';
 import '../../theme/text_styles.dart';
 import '../../state/listings_provider.dart';
@@ -11,7 +14,10 @@ import '../../state/theme_provider.dart';
 import '../../data/models/listing.dart';
 import '../../data/services/notification_service.dart';
 import '../../data/services/listings_service.dart';
+import '../../data/services/location_service.dart';
 import '../widgets/advanced_filter_drawer.dart';
+import 'listing_detail_screen.dart';
+import 'dart:async';
 
 class ExploreScreen extends ConsumerStatefulWidget {
   const ExploreScreen({super.key});
@@ -21,11 +27,205 @@ class ExploreScreen extends ConsumerStatefulWidget {
 }
 
 class _ExploreScreenState extends ConsumerState<ExploreScreen> {
-  bool _isMapView = false;
-  bool _isListView = false;
-  int _currentIndex = 1;
   final TextEditingController _searchController = TextEditingController();
+  List<Listing> _allListings = [];
+  List<Listing> _filteredListings = [];
+  bool _isLoading = true;
+  bool _isLoadingMore = false;
   String _searchQuery = '';
+  bool _isGridView = false;
+  bool _hasMore = true;
+  int _currentPage = 1;
+  final int _itemsPerPage = 50;
+  int _currentIndex = 1; // For bottom navigation
+
+  // Simple filters matching frontend exactly
+  String? _selectedCategory;
+  double? _minPrice;
+  double? _maxPrice;
+  double? _minRating;
+  DateTime? _selectedDate;
+  double? _proximityRadius; // in km
+  Position? _userLocation;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    await Future.wait([
+      _getUserLocation(),
+      _loadListings(reset: true),
+    ]);
+  }
+
+  Future<void> _getUserLocation() async {
+    try {
+      final locationService = ref.read(locationServiceProvider);
+      final position = await locationService.getCurrentPosition();
+      if (position != null && mounted) {
+        setState(() {
+          _userLocation = position;
+        });
+      }
+    } catch (e) {
+      print('Failed to get user location: $e');
+    }
+  }
+
+  Future<void> _loadListings({bool reset = false}) async {
+    if (reset) {
+      setState(() {
+        _isLoading = true;
+        _currentPage = 1;
+        _hasMore = true;
+      });
+    } else {
+      setState(() => _isLoadingMore = true);
+    }
+
+    try {
+      final listingsService = ref.read(listingsServiceProvider);
+
+      if (_searchQuery.trim().isNotEmpty) {
+        // Search path - simple search, no pagination
+        final newListings =
+            await listingsService.searchListings(_searchQuery.trim());
+        if (mounted) {
+          setState(() {
+            _allListings = newListings;
+            _filteredListings = newListings;
+            _hasMore = false;
+          });
+        }
+      } else {
+        // Filter path - build filters object matching frontend
+        final filters = ListingFilters(
+          category: _selectedCategory,
+          minPrice: _minPrice,
+          maxPrice: _maxPrice,
+          minRating: _minRating,
+          date: _selectedDate?.toIso8601String().split('T')[0],
+          location: (_proximityRadius != null && _userLocation != null)
+              ? LocationFilter(
+                  lat: _userLocation!.latitude,
+                  lng: _userLocation!.longitude,
+                  radius: _proximityRadius!,
+                )
+              : null,
+        );
+
+        final response = await listingsService.getListings(
+          filters: filters,
+          page: _currentPage,
+          limit: _itemsPerPage,
+        );
+
+        if (mounted) {
+          setState(() {
+            if (reset) {
+              _allListings = response.data;
+              _filteredListings = response.data;
+            } else {
+              _allListings.addAll(response.data);
+              _filteredListings.addAll(response.data);
+              _currentPage++;
+            }
+            _hasMore = response.hasMore;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading listings: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load listings: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() {
+      _searchQuery = value;
+    });
+    _loadListings(reset: true);
+  }
+
+  void _applyFilters({
+    String? category,
+    double? minPrice,
+    double? maxPrice,
+    double? minRating,
+    DateTime? date,
+    double? proximityRadius,
+  }) {
+    setState(() {
+      _selectedCategory = category;
+      _minPrice = minPrice;
+      _maxPrice = maxPrice;
+      _minRating = minRating;
+      _selectedDate = date;
+      _proximityRadius = proximityRadius;
+    });
+
+    _loadListings(reset: true);
+  }
+
+  void _clearAllFilters() {
+    setState(() {
+      _selectedCategory = null;
+      _minPrice = null;
+      _maxPrice = null;
+      _minRating = null;
+      _selectedDate = null;
+      _proximityRadius = null;
+      _searchQuery = '';
+      _searchController.clear();
+    });
+
+    _loadListings(reset: true);
+  }
+
+  int get _activeFiltersCount {
+    int count = 0;
+    if (_selectedCategory != null) count++;
+    if (_minPrice != null || _maxPrice != null) count++;
+    if (_minRating != null) count++;
+    if (_selectedDate != null) count++;
+    if (_proximityRadius != null) count++;
+    return count;
+  }
+
+  void _showFilterModal() {
+    final isDark = ref.read(themeProvider.notifier).isDark;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _FilterModal(
+        selectedCategory: _selectedCategory,
+        minPrice: _minPrice,
+        maxPrice: _maxPrice,
+        minRating: _minRating,
+        selectedDate: _selectedDate,
+        proximityRadius: _proximityRadius,
+        userLocation: _userLocation,
+        onApply: _applyFilters,
+        onClear: _clearAllFilters,
+        isDark: isDark,
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -46,7 +246,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         slivers: [
           // Modern App Bar
           SliverAppBar(
-            expandedHeight: 120,
+            expandedHeight: 180,
             pinned: true,
             backgroundColor: AppColors.backgroundColor(isDark),
             elevation: 0,
@@ -67,12 +267,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                 ),
                 child: IconButton(
                   icon: Icon(
-                    _isListView ? Icons.grid_view : LucideIcons.list,
+                    _isGridView ? Icons.grid_view : LucideIcons.list,
                     color: AppColors.textColor(isDark),
                   ),
                   onPressed: () {
                     setState(() {
-                      _isListView = !_isListView;
+                      _isGridView = !_isGridView;
                     });
                   },
                 ),
@@ -85,11 +285,40 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                   border: Border.all(color: AppColors.borderColor(isDark)),
                 ),
                 child: IconButton(
-                  icon: Icon(
-                    LucideIcons.filter,
-                    color: AppColors.textColor(isDark),
+                  icon: Stack(
+                    children: [
+                      Icon(
+                        LucideIcons.filter,
+                        color: AppColors.textColor(isDark),
+                      ),
+                      if (_activeFiltersCount > 0)
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: AppColors.kAccentMint,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 12,
+                              minHeight: 12,
+                            ),
+                            child: Text(
+                              _activeFiltersCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  onPressed: () => _showFiltersDrawer(context, isDark),
+                  onPressed: () => _showFilterModal(),
                 ),
               ),
             ],
@@ -117,11 +346,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                       ),
                       child: TextField(
                         controller: _searchController,
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value.toLowerCase();
-                          });
-                        },
+                        onChanged: _onSearchChanged,
                         style: TextStyle(color: AppColors.textColor(isDark)),
                         decoration: InputDecoration(
                           hintText:
@@ -147,6 +372,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                                     setState(() {
                                       _searchQuery = '';
                                     });
+                                    _applyFilters();
                                   },
                                 )
                               : null,
@@ -157,30 +383,38 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    // Removed old category filter buttons - we now have the filter modal
                   ],
                 ),
               ),
             ),
           ),
 
-          // Content
+          // Content - Simple unified approach
           listingsAsync.when(
             data: (listings) {
-              // Filter listings based on search query
-              final filteredListings = _searchQuery.isEmpty
-                  ? listings
-                  : listings.where((listing) {
-                      return listing.title
-                              .toLowerCase()
-                              .contains(_searchQuery) ||
-                          listing.description
-                              .toLowerCase()
-                              .contains(_searchQuery) ||
-                          listing.location.address
-                              .toLowerCase()
-                              .contains(_searchQuery) ||
-                          listing.category.toLowerCase().contains(_searchQuery);
-                    }).toList();
+              // Apply both search and category filters
+              List<Listing> filteredListings = listings;
+
+              // Apply search filter
+              if (_searchQuery.trim().isNotEmpty) {
+                filteredListings = filteredListings.where((listing) {
+                  final query = _searchQuery.toLowerCase();
+                  return listing.title.toLowerCase().contains(query) ||
+                      listing.description.toLowerCase().contains(query) ||
+                      listing.location.address.toLowerCase().contains(query) ||
+                      listing.category.toLowerCase().contains(query);
+                }).toList();
+              }
+
+              // Apply category filter
+              if (_selectedCategory != null) {
+                filteredListings = filteredListings.where((listing) {
+                  return listing.category.toLowerCase() ==
+                      _selectedCategory!.toLowerCase();
+                }).toList();
+              }
 
               if (filteredListings.isEmpty) {
                 return SliverFillRemaining(
@@ -207,23 +441,77 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         const SizedBox(height: 8),
                         Text(
                           _searchQuery.isNotEmpty
-                              ? 'Try adjusting your search'
+                              ? 'Try different search terms'
                               : 'Check back later for new experiences',
-                          style: AppTextStyles.bodyLarge.copyWith(
+                          style: AppTextStyles.bodyMedium.copyWith(
                             color: AppColors.textSecondaryColor(isDark),
                           ),
                         ),
+                        if (_searchQuery.isNotEmpty ||
+                            _selectedCategory != null) ...[
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _searchQuery = '';
+                                _selectedCategory = null;
+                              });
+                              _applyFilters();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.kAccentMint,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Clear Filters'),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 );
               }
 
-              return _isListView
-                  ? _buildListView(filteredListings, wishlist, isDark)
-                  : _buildGridView(filteredListings, wishlist, isDark);
+              return SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: _isGridView
+                    ? SliverGrid(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.75,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final listing = filteredListings[index];
+                            final isWishlisted =
+                                wishlist.value?.contains(listing.id) ?? false;
+                            return _buildModernListingCard(
+                                listing, isWishlisted, isDark);
+                          },
+                          childCount: filteredListings.length,
+                        ),
+                      )
+                    : SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final listing = filteredListings[index];
+                            final isWishlisted =
+                                wishlist.value?.contains(listing.id) ?? false;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _buildListViewCard(
+                                  listing, isWishlisted, isDark),
+                            );
+                          },
+                          childCount: filteredListings.length,
+                        ),
+                      ),
+              );
             },
-            loading: () => const SliverFillRemaining(
+            loading: () => SliverFillRemaining(
               child: Center(
                 child: CircularProgressIndicator(
                   valueColor:
@@ -231,29 +519,40 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                 ),
               ),
             ),
-            error: (error, stack) => SliverFillRemaining(
+            error: (error, stackTrace) => SliverFillRemaining(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.error_outline,
+                      LucideIcons.search,
                       size: 64,
                       color: AppColors.textSecondaryColor(isDark),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Error loading listings',
+                      'Unable to load listings',
                       style: AppTextStyles.h3.copyWith(
                         color: AppColors.textColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Please try again later',
-                      style: AppTextStyles.bodyLarge.copyWith(
+                      'Check your internet connection',
+                      style: AppTextStyles.bodyMedium.copyWith(
                         color: AppColors.textSecondaryColor(isDark),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        ref.read(listingsProvider.notifier).refreshListings();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.kAccentMint,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Retry'),
                     ),
                   ],
                 ),
@@ -262,7 +561,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildBottomNav(isDark),
+      bottomNavigationBar: _buildBottomNavigationBar(isDark),
     );
   }
 
@@ -363,7 +662,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                                     : Colors.grey[200],
                                 child: Center(
                                   child: Icon(
-                                    Icons.broken_image,
+                                    LucideIcons.search,
                                     size: 32,
                                     color: AppColors.textSecondaryColor(isDark),
                                   ),
@@ -375,7 +674,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                                   isDark ? Colors.grey[800] : Colors.grey[200],
                               child: Center(
                                 child: Icon(
-                                  LucideIcons.image,
+                                  LucideIcons.search,
                                   size: 32,
                                   color: AppColors.textSecondaryColor(isDark),
                                 ),
@@ -610,7 +909,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                                   isDark ? Colors.grey[800] : Colors.grey[200],
                               child: Center(
                                 child: Icon(
-                                  Icons.broken_image,
+                                  LucideIcons.search,
                                   size: 24,
                                   color: AppColors.textSecondaryColor(isDark),
                                 ),
@@ -621,7 +920,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                             color: isDark ? Colors.grey[800] : Colors.grey[200],
                             child: Center(
                               child: Icon(
-                                LucideIcons.image,
+                                LucideIcons.search,
                                 size: 24,
                                 color: AppColors.textSecondaryColor(isDark),
                               ),
@@ -780,82 +1079,70 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     );
   }
 
-  Widget _buildBottomNav(bool isDark) {
+  Widget _buildBottomNavigationBar(bool isDark) {
     return Container(
-      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 0),
+      height: 90,
       decoration: BoxDecoration(
-        color: AppColors.backgroundColor(isDark),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-        border: Border(
-          top: BorderSide(color: AppColors.borderColor(isDark), width: 1),
-        ),
+        color: AppColors.cardColor(isDark),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 15,
+            color: isDark ? Colors.black54 : Colors.grey.withOpacity(0.2),
+            blurRadius: 10,
             offset: const Offset(0, -5),
           ),
         ],
       ),
       child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(
-                icon: LucideIcons.house,
-                label: 'Home',
-                index: 0,
-                isSelected: _currentIndex == 0,
-                isDark: isDark,
-                onTap: () {
-                  setState(() {
-                    _currentIndex = 0;
-                  });
-                  context.goNamed('home');
-                },
-              ),
-              _buildNavItem(
-                icon: LucideIcons.compass,
-                label: 'Explore',
-                index: 1,
-                isSelected: _currentIndex == 1,
-                isDark: isDark,
-                onTap: () {},
-              ),
-              _buildNavItem(
-                icon: LucideIcons.heart,
-                label: 'Wishlist',
-                index: 2,
-                isSelected: _currentIndex == 2,
-                isDark: isDark,
-                onTap: () {
-                  setState(() {
-                    _currentIndex = 2;
-                  });
-                  context.goNamed('wishlist');
-                },
-              ),
-              _buildNavItem(
-                icon: LucideIcons.user,
-                label: 'Profile',
-                index: 3,
-                isSelected: _currentIndex == 3,
-                isDark: isDark,
-                onTap: () {
-                  setState(() {
-                    _currentIndex = 3;
-                  });
-                  context.goNamed('profile');
-                },
-              ),
-            ],
-          ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildNavItem(
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home,
+              label: 'Home',
+              index: 0,
+              isSelected: _currentIndex == 0,
+              onTap: () {
+                setState(() => _currentIndex = 0);
+                context.goNamed('home');
+              },
+              isDark: isDark,
+            ),
+            _buildNavItem(
+              icon: Icons.explore_outlined,
+              selectedIcon: Icons.explore,
+              label: 'Explore',
+              index: 1,
+              isSelected: _currentIndex == 1,
+              onTap: () =>
+                  setState(() => _currentIndex = 1), // Already on explore
+              isDark: isDark,
+            ),
+            _buildNavItem(
+              icon: Icons.favorite_outline,
+              selectedIcon: Icons.favorite,
+              label: 'Wishlist',
+              index: 2,
+              isSelected: _currentIndex == 2,
+              onTap: () {
+                setState(() => _currentIndex = 2);
+                context.goNamed('wishlist');
+              },
+              isDark: isDark,
+            ),
+            _buildNavItem(
+              icon: Icons.person_outline,
+              selectedIcon: Icons.person,
+              label: 'Profile',
+              index: 3,
+              isSelected: _currentIndex == 3,
+              onTap: () {
+                setState(() => _currentIndex = 3);
+                context.goNamed('profile');
+              },
+              isDark: isDark,
+            ),
+          ],
         ),
       ),
     );
@@ -863,69 +1150,37 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   Widget _buildNavItem({
     required IconData icon,
+    required IconData selectedIcon,
     required String label,
     required int index,
     required bool isSelected,
-    required bool isDark,
     required VoidCallback onTap,
+    required bool isDark,
   }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isSelected ? selectedIcon : icon,
             color: isSelected
-                ? AppColors.kAccentMint.withOpacity(0.1)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+                ? AppColors.kAccentMint
+                : AppColors.textColor(isDark).withOpacity(0.6),
+            size: 24,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                color: isSelected
-                    ? AppColors.kAccentMint
-                    : AppColors.textSecondaryColor(isDark),
-                size: 22,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: isSelected
-                      ? AppColors.kAccentMint
-                      : AppColors.textSecondaryColor(isDark),
-                  fontSize: 10,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: isSelected
+                  ? AppColors.kAccentMint
+                  : AppColors.textColor(isDark).withOpacity(0.6),
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  void _showFiltersDrawer(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => AdvancedFilterDrawer(
-        isDark: isDark,
-        currentFilters: ref.read(listingsProvider.notifier).currentFilters ??
-            ListingFilters(),
-        onApplyFilters: (filters) {
-          ref.read(listingsProvider.notifier).applyFilters(filters);
-          Navigator.pop(context);
-        },
-        onClearFilters: () {
-          ref.read(listingsProvider.notifier).clearFilters();
-          Navigator.pop(context);
-        },
+        ],
       ),
     );
   }
@@ -955,5 +1210,355 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       default:
         return category;
     }
+  }
+
+  // Remove the old category button methods since we're using the filter modal now
+  void _selectCategory(String? category) {
+    setState(() {
+      _selectedCategory = category;
+    });
+    _applyFilters(category: category);
+  }
+}
+
+// Filter Modal Widget
+class _FilterModal extends StatefulWidget {
+  final String? selectedCategory;
+  final double? minPrice;
+  final double? maxPrice;
+  final double? minRating;
+  final DateTime? selectedDate;
+  final double? proximityRadius;
+  final Position? userLocation;
+  final Function({
+    String? category,
+    double? minPrice,
+    double? maxPrice,
+    double? minRating,
+    DateTime? date,
+    double? proximityRadius,
+  }) onApply;
+  final VoidCallback onClear;
+  final bool isDark;
+
+  const _FilterModal({
+    this.selectedCategory,
+    this.minPrice,
+    this.maxPrice,
+    this.minRating,
+    this.selectedDate,
+    this.proximityRadius,
+    this.userLocation,
+    required this.onApply,
+    required this.onClear,
+    required this.isDark,
+  });
+
+  @override
+  State<_FilterModal> createState() => _FilterModalState();
+}
+
+class _FilterModalState extends State<_FilterModal> {
+  late String? _selectedCategory;
+  late double? _minPrice;
+  late double? _maxPrice;
+  late double? _minRating;
+  late DateTime? _selectedDate;
+  late double? _proximityRadius;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCategory = widget.selectedCategory;
+    _minPrice = widget.minPrice;
+    _maxPrice = widget.maxPrice;
+    _minRating = widget.minRating;
+    _selectedDate = widget.selectedDate;
+    _proximityRadius =
+        widget.proximityRadius ?? (widget.userLocation != null ? 5.0 : null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.9,
+      maxChildSize: 0.9,
+      minChildSize: 0.5,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: widget.isDark ? AppColors.cardColor(true) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: widget.isDark
+                          ? Colors.grey.shade700
+                          : Colors.grey.shade200,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        widget.onClear();
+                        Navigator.pop(context);
+                      },
+                      child: Text(
+                        'Clear All',
+                        style: TextStyle(
+                          color: AppColors.textColor(widget.isDark),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Filters',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textColor(widget.isDark),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        widget.onApply(
+                          category: _selectedCategory,
+                          minPrice: _minPrice,
+                          maxPrice: _maxPrice,
+                          minRating: _minRating,
+                          date: _selectedDate,
+                          proximityRadius: _proximityRadius,
+                        );
+                        Navigator.pop(context);
+                      },
+                      child: Text(
+                        'Apply',
+                        style: TextStyle(
+                          color: AppColors.kAccentMint,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Category Section
+                      _buildSectionTitle('Category'),
+                      const SizedBox(height: 12),
+                      _buildCategorySelector(),
+                      const SizedBox(height: 24),
+
+                      // Price Range Section
+                      _buildSectionTitle('Price Range'),
+                      const SizedBox(height: 12),
+                      _buildPriceRangeSelector(),
+                      const SizedBox(height: 24),
+
+                      // Rating Section
+                      _buildSectionTitle('Minimum Rating'),
+                      const SizedBox(height: 12),
+                      _buildRatingSelector(),
+                      const SizedBox(height: 24),
+
+                      // Distance Section (if location available)
+                      if (widget.userLocation != null) ...[
+                        _buildSectionTitle('Distance'),
+                        const SizedBox(height: 12),
+                        _buildDistanceSlider(),
+                        const SizedBox(height: 24),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textColor(widget.isDark),
+      ),
+    );
+  }
+
+  Widget _buildCategorySelector() {
+    final categories = [
+      {'id': 'restaurant', 'name': 'Restaurants', 'icon': Icons.restaurant},
+      {'id': 'event', 'name': 'Events', 'icon': Icons.event},
+      {'id': 'cultural', 'name': 'Cultural', 'icon': Icons.museum},
+    ];
+
+    return Wrap(
+      spacing: 12,
+      children: categories.map((category) {
+        final isSelected = _selectedCategory == category['id'];
+        return FilterChip(
+          selected: isSelected,
+          onSelected: (selected) {
+            setState(() {
+              _selectedCategory = selected ? category['id'] as String : null;
+            });
+          },
+          label: Text(
+            category['name'] as String,
+            style: TextStyle(
+              color: isSelected
+                  ? Colors.white
+                  : AppColors.textColor(widget.isDark),
+            ),
+          ),
+          avatar: Icon(
+            category['icon'] as IconData,
+            size: 16,
+            color:
+                isSelected ? Colors.white : AppColors.textColor(widget.isDark),
+          ),
+          backgroundColor:
+              widget.isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+          selectedColor: AppColors.kAccentMint,
+          checkmarkColor: Colors.white,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildPriceRangeSelector() {
+    final priceRanges = [
+      {'min': 0.0, 'max': 100.0, 'label': 'Under 100 MAD'},
+      {'min': 100.0, 'max': 200.0, 'label': '100-200 MAD'},
+      {'min': 200.0, 'max': 300.0, 'label': '200-300 MAD'},
+      {'min': 300.0, 'max': 500.0, 'label': '300-500 MAD'},
+      {'min': 500.0, 'max': null, 'label': 'Over 500 MAD'},
+    ];
+
+    return Wrap(
+      spacing: 12,
+      children: priceRanges.map((range) {
+        final isSelected =
+            _minPrice == range['min'] && _maxPrice == range['max'];
+        return FilterChip(
+          selected: isSelected,
+          onSelected: (selected) {
+            setState(() {
+              if (selected) {
+                _minPrice = range['min'] as double;
+                _maxPrice = range['max'] as double?;
+              } else {
+                _minPrice = null;
+                _maxPrice = null;
+              }
+            });
+          },
+          label: Text(
+            range['label'] as String,
+            style: TextStyle(
+              color: isSelected
+                  ? Colors.white
+                  : AppColors.textColor(widget.isDark),
+            ),
+          ),
+          backgroundColor:
+              widget.isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+          selectedColor: AppColors.kAccentMint,
+          checkmarkColor: Colors.white,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildRatingSelector() {
+    final ratings = [4.5, 4.0, 3.5, 3.0];
+
+    return Wrap(
+      spacing: 12,
+      children: ratings.map((rating) {
+        final isSelected = _minRating == rating;
+        return FilterChip(
+          selected: isSelected,
+          onSelected: (selected) {
+            setState(() {
+              _minRating = selected ? rating : null;
+            });
+          },
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.star, size: 16, color: Colors.amber),
+              const SizedBox(width: 4),
+              Text(
+                '${rating}+',
+                style: TextStyle(
+                  color: isSelected
+                      ? Colors.white
+                      : AppColors.textColor(widget.isDark),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor:
+              widget.isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+          selectedColor: AppColors.kAccentMint,
+          checkmarkColor: Colors.white,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildDistanceSlider() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Within ${_proximityRadius?.toInt() ?? 5} km',
+          style: TextStyle(
+            fontSize: 14,
+            color: AppColors.textSecondaryColor(widget.isDark),
+          ),
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: AppColors.kAccentMint,
+            inactiveTrackColor:
+                widget.isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+            thumbColor: AppColors.kAccentMint,
+            overlayColor: AppColors.kAccentMint.withOpacity(0.2),
+          ),
+          child: Slider(
+            value: _proximityRadius ?? 5.0,
+            min: 1.0,
+            max: 50.0,
+            divisions: 49,
+            onChanged: (value) {
+              setState(() {
+                _proximityRadius = value;
+              });
+            },
+          ),
+        ),
+      ],
+    );
   }
 }

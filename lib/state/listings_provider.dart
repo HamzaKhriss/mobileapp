@@ -63,7 +63,7 @@ class ListingsNotifier extends StateNotifier<AsyncValue<List<Listing>>> {
       final response = await _listingsService.getListings(
         filters: _currentFilters,
         page: _currentPage,
-        limit: 12,
+        limit: 100,
       );
 
       print(
@@ -264,3 +264,26 @@ class ReviewRequest {
     required this.comment,
   });
 }
+
+// Map-specific provider that loads all listings (no pagination limit)
+final mapListingsProvider = FutureProvider<List<Listing>>((ref) async {
+  final service = ref.read(listingsServiceProvider);
+
+  try {
+    print('[MapListingsProvider] 🗺️ Loading all listings for map...');
+
+    // Load a reasonable number of listings for the map
+    final response = await service.getListings(
+      filters: ListingFilters(), // No filters for map - show everything
+      page: 1,
+      limit: 100, // Reduced from 1000 to avoid backend issues
+    );
+
+    print(
+        '[MapListingsProvider] ✅ Loaded ${response.data.length} listings for map');
+    return response.data;
+  } catch (error, stackTrace) {
+    print('[MapListingsProvider] ❌ Error loading map listings: $error');
+    rethrow;
+  }
+});

@@ -32,10 +32,10 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
   // Map controller for programmatic map control
   late final MapController _mapController;
 
-  // Search functionality
+  // Simple search and filter state
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  List<Listing> _filteredListings = [];
+  String? _selectedCategory; // Current selected category filter
 
   // User location state
   LatLng? _userLocation;
@@ -50,11 +50,6 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
     super.initState();
     _mapController = MapController();
     _initializeLocation();
-
-    // Initialize search functionality
-    _searchController.addListener(() {
-      // This listener is already handled in the onChanged callback
-    });
   }
 
   @override
@@ -136,115 +131,30 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
     _mapController.move(listingPos, 16.0);
   }
 
-  // Handle search functionality
-  void _handleSearch(String query, List<Listing> allListings) {
-    setState(() {
-      _searchQuery = query.toLowerCase();
-      if (_searchQuery.isEmpty) {
-        _filteredListings = allListings;
-      } else {
-        _filteredListings = allListings.where((listing) {
-          return listing.title.toLowerCase().contains(_searchQuery) ||
-              listing.description.toLowerCase().contains(_searchQuery) ||
-              listing.location.address.toLowerCase().contains(_searchQuery) ||
-              listing.category.toLowerCase().contains(_searchQuery);
-        }).toList();
-      }
-    });
+  // Apply simple client-side filtering for map view
+  List<Listing> _getFilteredListings(List<Listing> allListings) {
+    List<Listing> filtered = allListings;
 
-    // If there are search results, fit the map to show all results
-    if (_filteredListings.isNotEmpty && _searchQuery.isNotEmpty) {
-      _fitMapToListings(_filteredListings);
-    }
-  }
-
-  // Fit map to show all filtered listings
-  void _fitMapToListings(List<Listing> listings) {
-    if (listings.isEmpty) {
-      print('[HomeMapScreen] ⚠️ No listings to fit map to');
-      return;
-    }
-
-    try {
-      // Validate coordinates and filter out invalid ones
-      final validListings = listings.where((listing) {
-        final lat = listing.location.lat;
-        final lng = listing.location.lng;
-        return lat.isFinite &&
-            lng.isFinite &&
-            lat != 0.0 &&
-            lng != 0.0 && // Exclude 0,0 coordinates
-            lat >= -90 &&
-            lat <= 90 &&
-            lng >= -180 &&
-            lng <= 180;
+    // Apply search filter
+    if (_searchQuery.trim().isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      filtered = filtered.where((listing) {
+        return listing.title.toLowerCase().contains(query) ||
+            listing.description.toLowerCase().contains(query) ||
+            listing.location.address.toLowerCase().contains(query) ||
+            listing.category.toLowerCase().contains(query);
       }).toList();
-
-      if (validListings.isEmpty) {
-        print('[HomeMapScreen] ⚠️ No valid coordinates found in listings');
-        return;
-      }
-
-      double minLat = validListings.first.location.lat;
-      double maxLat = validListings.first.location.lat;
-      double minLng = validListings.first.location.lng;
-      double maxLng = validListings.first.location.lng;
-
-      for (final listing in validListings) {
-        final lat = listing.location.lat;
-        final lng = listing.location.lng;
-
-        minLat = math.min(minLat, lat);
-        maxLat = math.max(maxLat, lat);
-        minLng = math.min(minLng, lng);
-        maxLng = math.max(maxLng, lng);
-      }
-
-      // Ensure we have valid bounds
-      if (!minLat.isFinite ||
-          !maxLat.isFinite ||
-          !minLng.isFinite ||
-          !maxLng.isFinite) {
-        print('[HomeMapScreen] ❌ Invalid bounds calculated');
-        return;
-      }
-
-      // Add padding, but ensure minimum padding for single point
-      double latPadding = (maxLat - minLat) * 0.1;
-      double lngPadding = (maxLng - minLng) * 0.1;
-
-      // Minimum padding for single point or very close points
-      const minPadding = 0.01; // ~1km
-      latPadding = math.max(latPadding, minPadding);
-      lngPadding = math.max(lngPadding, minPadding);
-
-      final southWest = LatLng(minLat - latPadding, minLng - lngPadding);
-      final northEast = LatLng(maxLat + latPadding, maxLng + lngPadding);
-
-      // Validate final bounds
-      if (!southWest.latitude.isFinite ||
-          !southWest.longitude.isFinite ||
-          !northEast.latitude.isFinite ||
-          !northEast.longitude.isFinite) {
-        print('[HomeMapScreen] ❌ Invalid final bounds');
-        return;
-      }
-
-      final bounds = LatLngBounds(southWest, northEast);
-
-      print(
-          '[HomeMapScreen] 📍 Fitting map to ${validListings.length} listings');
-      print(
-          '[HomeMapScreen] 📍 Bounds: SW(${southWest.latitude}, ${southWest.longitude}) NE(${northEast.latitude}, ${northEast.longitude})');
-
-      _mapController.fitCamera(CameraFit.bounds(bounds: bounds));
-    } catch (e, stackTrace) {
-      print('[HomeMapScreen] ❌ Error fitting map to listings: $e');
-      print('[HomeMapScreen] 📍 Stack trace: $stackTrace');
-
-      // Fallback: just center on Casablanca
-      _mapController.move(const LatLng(33.5731, -7.5898), 12.0);
     }
+
+    // Apply category filter
+    if (_selectedCategory != null) {
+      filtered = filtered.where((listing) {
+        return listing.category.toLowerCase() ==
+            _selectedCategory!.toLowerCase();
+      }).toList();
+    }
+
+    return filtered;
   }
 
   // Enhanced location permission handling
@@ -466,15 +376,11 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
 
                   return listingsAsync.when(
                     data: (listings) {
-                      // Initialize filtered listings if not set
-                      if (_filteredListings.isEmpty && _searchQuery.isEmpty) {
-                        _filteredListings = listings;
-                      }
-
                       // Use filtered listings or all listings
-                      final displayListings = _searchQuery.isNotEmpty
-                          ? _filteredListings
-                          : listings;
+                      final displayListings = _getFilteredListings(listings);
+
+                      print(
+                          '[HomeMapScreen] 🗺️ Displaying ${displayListings.length} listings on map');
 
                       return MarkerLayer(
                         markers: displayListings.map((listing) {
@@ -528,7 +434,11 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
                       );
                     },
                     loading: () => MarkerLayer(markers: []),
-                    error: (error, stack) => MarkerLayer(markers: []),
+                    error: (error, stack) {
+                      print(
+                          '[HomeMapScreen] ❌ Error loading map listings: $error');
+                      return MarkerLayer(markers: []);
+                    },
                   );
                 },
               ),
@@ -562,9 +472,8 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
                         controller: _searchController,
                         style: TextStyle(color: AppColors.textColor(isDark)),
                         onChanged: (value) {
-                          final listingsAsync = ref.read(listingsProvider);
-                          listingsAsync.whenData((listings) {
-                            _handleSearch(value, listings);
+                          setState(() {
+                            _searchQuery = value.trim();
                           });
                         },
                         decoration: InputDecoration(
@@ -578,11 +487,6 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
                                           AppColors.textSecondaryColor(isDark)),
                                   onPressed: () {
                                     _searchController.clear();
-                                    final listingsAsync =
-                                        ref.read(listingsProvider);
-                                    listingsAsync.whenData((listings) {
-                                      _handleSearch('', listings);
-                                    });
                                   },
                                 )
                               : null,
@@ -685,7 +589,7 @@ class _HomeMapScreenState extends ConsumerState<HomeMapScreen> {
 
           // Floating action button to center on user location
           Positioned(
-            top: 140,
+            top: 200,
             right: 16,
             child: FloatingActionButton(
               heroTag: "centerLocation",

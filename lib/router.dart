@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'ui/pages/splash_screen.dart';
 import 'ui/pages/welcome_screen.dart';
 import 'ui/pages/signup_screen.dart';
 import 'ui/pages/login_screen.dart';
@@ -28,8 +29,17 @@ Page<T> _buildPageWithTransition<T extends Object?>(
 }
 
 final GoRouter appRouter = GoRouter(
-  initialLocation: '/welcome',
+  initialLocation: '/',
   routes: [
+    GoRoute(
+      path: '/',
+      name: 'splash',
+      pageBuilder: (context, state) => _buildPageWithTransition(
+        context,
+        state,
+        const SplashScreen(),
+      ),
+    ),
     GoRoute(
       path: '/welcome',
       name: 'welcome',

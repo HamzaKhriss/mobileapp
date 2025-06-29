@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/colors.dart';
 import '../../theme/text_styles.dart';
+import '../../state/theme_provider.dart';
 
-class TextInputField extends StatefulWidget {
+class TextInputField extends ConsumerStatefulWidget {
   final String label;
   final String? hint;
   final TextEditingController controller;
@@ -24,10 +26,10 @@ class TextInputField extends StatefulWidget {
   });
 
   @override
-  State<TextInputField> createState() => _TextInputFieldState();
+  ConsumerState<TextInputField> createState() => _TextInputFieldState();
 }
 
-class _TextInputFieldState extends State<TextInputField> {
+class _TextInputFieldState extends ConsumerState<TextInputField> {
   bool _isValid = false;
   bool _hasStartedTyping = false;
 
@@ -64,12 +66,17 @@ class _TextInputFieldState extends State<TextInputField> {
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = ref.watch(themeProvider);
+    final isDark = themeMode == ThemeMode.dark;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           widget.label,
-          style: AppTextStyles.bodyMedium.copyWith(color: Colors.white70),
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textColor(isDark).withOpacity(0.7),
+          ),
         ),
         const SizedBox(height: 8),
         Container(
@@ -78,7 +85,7 @@ class _TextInputFieldState extends State<TextInputField> {
             border: Border.all(
               color: _hasStartedTyping && _isValid
                   ? AppColors.kAccentMint
-                  : Colors.grey.shade600,
+                  : AppColors.textColor(isDark).withOpacity(0.3),
               width: 1.5,
             ),
           ),
@@ -86,11 +93,13 @@ class _TextInputFieldState extends State<TextInputField> {
             controller: widget.controller,
             obscureText: widget.obscureText,
             keyboardType: widget.keyboardType,
-            style: AppTextStyles.bodyMedium,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textColor(isDark),
+            ),
             decoration: InputDecoration(
               hintText: widget.hint,
               hintStyle: AppTextStyles.bodyMedium.copyWith(
-                color: Colors.grey.shade400,
+                color: AppColors.textColor(isDark).withOpacity(0.5),
               ),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(

@@ -9,6 +9,7 @@ import '../../state/theme_provider.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/text_input_field.dart';
 import '../widgets/social_button.dart';
+import '../widgets/animated_bubble_background.dart';
 
 class WelcomeScreen extends ConsumerStatefulWidget {
   const WelcomeScreen({super.key});
@@ -84,32 +85,14 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
     final isDark = themeMode == ThemeMode.dark;
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage('assets/images/casablanca.jpg'),
-            fit: BoxFit.cover,
-          ),
-        ),
+      body: AnimatedBubbleBackground(
+        isDark: isDark,
         child: AnimatedBuilder(
           animation: _animationController,
           builder: (context, child) {
             return Stack(
               children: [
-                // Gradient overlay
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.3),
-                        Colors.black.withOpacity(0.7),
-                      ],
-                    ),
-                  ),
-                ),
-                // Animated rounded rectangle overlay
+                // Animated rounded rectangle overlay (keeping the grey box)
                 Positioned(
                   bottom: 0,
                   left: 0,
@@ -119,8 +102,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                   child: Container(
                     decoration: BoxDecoration(
                       color: isDark
-                          ? const Color.fromRGBO(40, 43, 43, 1)
-                          : AppColors.kSurfaceLight,
+                          ? AppColors.kBrandDark.withOpacity(0.95)
+                          : AppColors.kSurfaceLight.withOpacity(0.95),
                       borderRadius: BorderRadius.only(
                         topLeft: Radius.circular(
                             MediaQuery.of(context).size.width * 0.15),
@@ -129,10 +112,18 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                       ),
                       border: !isDark
                           ? Border.all(
-                              color: AppColors.kBorderLight,
+                              color: AppColors.kBorderLight.withOpacity(0.3),
                               width: 1,
                             )
                           : null,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          spreadRadius: 5,
+                          offset: const Offset(0, -5),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -162,6 +153,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   }
 
   Widget _buildWelcomeContent() {
+    final themeMode = ref.watch(themeProvider);
+    final isDark = themeMode == ThemeMode.dark;
     final screenHeight = MediaQuery.of(context).size.height;
     final rectangleHeight = screenHeight * 0.6; // 60% of screen height
 
@@ -175,12 +168,45 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Logo and title
+              // Logo and title with enhanced styling
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.kAccentMint.withOpacity(0.1),
+                  border: Border.all(
+                    color: AppColors.kAccentMint.withOpacity(0.3),
+                    width: 2,
+                  ),
+                ),
+                child: Image.asset(
+                  'assets/images/app_logo.png',
+                  width: 60,
+                  height: 60,
+                  color: AppColors.kAccentMint,
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    Icons.location_city,
+                    size: 60,
+                    color: AppColors.kAccentMint,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
               Text(
                 'CasaWonders',
                 style: AppTextStyles.h1.copyWith(
                   fontSize: 48,
                   fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.textColor(isDark),
+                  shadows: [
+                    Shadow(
+                      color: isDark
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.white.withOpacity(0.6),
+                      offset: const Offset(0, 2),
+                      blurRadius: 4,
+                    ),
+                  ],
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -188,38 +214,78 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
               Text(
                 'Discover the wonders of Casablanca',
                 style: AppTextStyles.bodyLarge.copyWith(
-                  color: Colors.white70,
+                  color: isDark
+                      ? Colors.white.withOpacity(0.9)
+                      : AppColors.textSecondaryColor(isDark),
                   fontSize: 18,
+                  shadows: [
+                    Shadow(
+                      color: isDark
+                          ? Colors.black.withOpacity(0.2)
+                          : Colors.white.withOpacity(0.4),
+                      offset: const Offset(0, 1),
+                      blurRadius: 2,
+                    ),
+                  ],
                 ),
                 textAlign: TextAlign.center,
               ),
             ],
           ),
         ),
-        // Buttons positioned 15% from bottom of the rectangle
+        // Enhanced buttons positioned 15% from bottom of the rectangle
         Positioned(
           bottom: rectangleHeight * 0.15,
           left: 24,
           right: 24,
           child: Column(
             children: [
-              GradientButton(
-                text: 'Sign Up',
-                onPressed: () => _showAuthForm(true),
+              // Sign Up button with enhanced styling
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(39),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.kAccentMint.withOpacity(0.3),
+                      blurRadius: 15,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: GradientButton(
+                  text: 'Sign Up',
+                  onPressed: () => _showAuthForm(true),
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
+              // Log In button with enhanced styling
               Container(
                 width: double.infinity,
                 height: 56,
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.3),
-                    width: 1.5,
+                    color: isDark
+                        ? Colors.white.withOpacity(0.4)
+                        : AppColors.textColor(isDark).withOpacity(0.3),
+                    width: 2,
                   ),
                   borderRadius: BorderRadius.circular(39),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.1)
+                          : AppColors.textColor(isDark).withOpacity(0.1),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
                 child: Material(
-                  color: Colors.transparent,
+                  color: isDark
+                      ? Colors.white.withOpacity(0.1)
+                      : AppColors.cardColor(isDark).withOpacity(0.3),
                   borderRadius: BorderRadius.circular(39),
                   child: InkWell(
                     onTap: () => _showAuthForm(false),
@@ -227,7 +293,20 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                     child: Center(
                       child: Text(
                         'Log In',
-                        style: AppTextStyles.buttonText,
+                        style: AppTextStyles.buttonText.copyWith(
+                          color: isDark
+                              ? Colors.white
+                              : AppColors.textColor(isDark),
+                          shadows: [
+                            Shadow(
+                              color: isDark
+                                  ? Colors.black.withOpacity(0.2)
+                                  : Colors.white.withOpacity(0.4),
+                              offset: const Offset(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -261,10 +340,17 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
               ),
               GestureDetector(
                 onTap: _hideAuthForm,
-                child: Icon(
-                  LucideIcons.x,
-                  color: AppColors.textColor(isDark),
-                  size: 24,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.cardColor(isDark).withOpacity(0.3),
+                  ),
+                  child: Icon(
+                    LucideIcons.x,
+                    color: AppColors.textColor(isDark),
+                    size: 24,
+                  ),
                 ),
               ),
             ],
@@ -274,7 +360,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           // Title
           Text(
             _isSignUp ? 'Get Started!' : 'Hello again!',
-            style: AppTextStyles.h2,
+            style: AppTextStyles.h2.copyWith(
+              color: AppColors.textColor(isDark),
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
@@ -325,9 +413,17 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                     onPressed: () async {
                       final success = _isSignUp
                           ? await ref.read(authProvider.notifier).signUp(
-                                _nameController.text,
-                                _emailController.text,
-                                _passwordController.text,
+                                firstName:
+                                    _nameController.text.split(' ').first,
+                                lastName:
+                                    _nameController.text.split(' ').length > 1
+                                        ? _nameController.text
+                                            .split(' ')
+                                            .skip(1)
+                                            .join(' ')
+                                        : '',
+                                email: _emailController.text,
+                                password: _passwordController.text,
                               )
                           : await ref.read(authProvider.notifier).login(
                                 _emailController.text,
@@ -335,19 +431,50 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                               );
 
                       if (success && mounted) {
-                        context.goNamed('home');
+                        if (_isSignUp) {
+                          // Show success message and switch to login mode
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Registration successful! Please log in with your new account.'),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 4),
+                            ),
+                          );
+                          setState(() {
+                            _isSignUp = false;
+                            _nameController.clear();
+                            _passwordController.clear();
+                            // Keep email filled for convenience but clear any auth state
+                          });
+                          // Clear any error state
+                          ref.read(authProvider.notifier).clearError();
+                        } else {
+                          context.goNamed('home');
+                        }
                       }
                     },
                   ),
 
                   if (authState.error != null) ...[
                     const SizedBox(height: 16),
-                    Text(
-                      authState.error!,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.kAlertRed,
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.kAlertRed.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.kAlertRed.withOpacity(0.3),
+                          width: 1,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
+                      child: Text(
+                        authState.error!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.kAlertRed,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ],
 
@@ -359,20 +486,40 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                       Expanded(
                         child: Container(
                           height: 1,
-                          color: Colors.grey.shade600,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.transparent,
+                                AppColors.textSecondaryColor(isDark)
+                                    .withOpacity(0.5),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
                           'OR',
-                          style: AppTextStyles.bodySmall,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondaryColor(isDark),
+                          ),
                         ),
                       ),
                       Expanded(
                         child: Container(
                           height: 1,
-                          color: Colors.grey.shade600,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.transparent,
+                                AppColors.textSecondaryColor(isDark)
+                                    .withOpacity(0.5),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -394,36 +541,36 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                       SocialButton(
                         provider: SocialProvider.google,
                         onPressed: () {
-                          // Handle Google auth
+                          // Handle Google login
                         },
                       ),
                       const SizedBox(width: 16),
                       SocialButton(
                         provider: SocialProvider.apple,
                         onPressed: () {
-                          // Handle Apple auth
+                          // Handle Apple login
                         },
                       ),
                       const SizedBox(width: 16),
                       SocialButton(
                         provider: SocialProvider.facebook,
                         onPressed: () {
-                          // Handle Facebook auth
+                          // Handle Facebook login
                         },
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
 
-                  // Switch between sign up and login
+                  // Switch between sign up and log in
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
                         _isSignUp
                             ? 'Already have an account? '
-                            : 'Don\'t have an account? ',
-                        style: AppTextStyles.bodyMedium,
+                            : "Don't have an account? ",
+                        style: AppTextStyles.bodySmall,
                       ),
                       GestureDetector(
                         onTap: () {
@@ -433,7 +580,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                         },
                         child: Text(
                           _isSignUp ? 'Log In' : 'Sign Up',
-                          style: AppTextStyles.bodyMedium.copyWith(
+                          style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.kAccentMint,
                             fontWeight: FontWeight.w600,
                           ),
@@ -441,7 +588,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 32),
                 ],
               ),
             ),

@@ -16,11 +16,29 @@ dependencies:
   flutter_map: ^6.1.0
   latlong2: ^0.9.1
   flutter_lucide: ^1.6.2
+  # HTTP and API
+  http: ^1.1.0
+  dio: ^5.3.2
+  # Local storage
+  shared_preferences: ^2.2.2
+  # JSON handling
+  json_annotation: ^4.8.1
+  # Location services
+  geolocator: ^10.1.0
+  permission_handler: ^11.0.1
+  # Image handling
+  cached_network_image: ^3.3.0
+  image_picker: ^1.0.4
+  # Date/time
+  timeago: ^3.6.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  # JSON serialization
+  build_runner: ^2.4.7
+  json_serializable: ^6.7.1
 
 flutter:
   uses-material-design: true

@@ -1,27 +1,23 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../data/mock_data.dart';
+import '../data/models/listing.dart';
+import 'listings_provider.dart';
 
-class WishlistNotifier extends StateNotifier<List<MockListing>> {
-  WishlistNotifier() : super([]);
+// Re-export favorites provider from listings_provider for consistency
+final wishlistProvider = favoritesProvider;
 
-  void toggleWishlist(MockListing listing) {
-    if (state.any((item) => item.id == listing.id)) {
-      state = state.where((item) => item.id != listing.id).toList();
-    } else {
-      state = [...state, listing];
-    }
-  }
+// Wishlist listings provider (favorite listings)
+final wishlistListingsProvider = favoriteListingsProvider;
 
-  bool isInWishlist(String listingId) {
-    return state.any((item) => item.id == listingId);
-  }
+// Helper provider to check if a listing is in wishlist
+final isInWishlistProvider = Provider.family<bool, String>((ref, listingId) {
+  final favoritesNotifier = ref.watch(favoritesProvider.notifier);
+  return favoritesNotifier.isFavorite(listingId);
+});
 
-  void clearWishlist() {
-    state = [];
-  }
-}
-
-final wishlistProvider =
-    StateNotifierProvider<WishlistNotifier, List<MockListing>>((ref) {
-      return WishlistNotifier();
-    });
+// Toggle wishlist provider
+final toggleWishlistProvider = Provider<Future<void> Function(String)>((ref) {
+  return (String listingId) async {
+    final favoritesNotifier = ref.read(favoritesProvider.notifier);
+    await favoritesNotifier.toggleFavorite(listingId);
+  };
+});
